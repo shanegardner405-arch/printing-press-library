@@ -18,14 +18,15 @@ func newConversationsHistoryCmd(flags *rootFlags) *cobra.Command {
 	var flagCursor string
 	var flagOldest string
 	var flagLatest string
+	var flagUser string
 
 	cmd := &cobra.Command{
 		Use:     "history",
 		Short:   "Fetch message history for a channel",
 		Example: "  slack-pp-cli conversations history",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if !cmd.Flags().Changed("channel") && !flags.dryRun {
-				return fmt.Errorf("required flag \"%s\" not set", "channel")
+			if !cmd.Flags().Changed("channel") && !cmd.Flags().Changed("user") && !flags.dryRun {
+				return fmt.Errorf("required flag \"%s\" or \"%s\" not set", "channel", "user")
 			}
 			c, err := flags.newClient()
 			if err != nil {
@@ -34,6 +35,15 @@ func newConversationsHistoryCmd(flags *rootFlags) *cobra.Command {
 
 			path := "/conversations.history"
 			params := map[string]string{}
+			forceUserToken := false
+			if flagUser != "" {
+				resolvedChannel, resolveErr := slackResolveDMChannel(c, flagUser)
+				if resolveErr != nil {
+					return classifyAPIError(resolveErr)
+				}
+				flagChannel = resolvedChannel
+				forceUserToken = true
+			}
 			if flagChannel != "" {
 				params["channel"] = fmt.Sprintf("%v", flagChannel)
 			}
@@ -52,9 +62,18 @@ func newConversationsHistoryCmd(flags *rootFlags) *cobra.Command {
 			if flagLatest != "" {
 				params["latest"] = fmt.Sprintf("%v", flagLatest)
 			}
-			data, prov, err := resolveRead(c, flags, "conversations", false, path, params)
-			if err != nil {
-				return classifyAPIError(err)
+			var data json.RawMessage
+			prov := DataProvenance{Source: "live"}
+			if forceUserToken || slackIsDMChannel(flagChannel) {
+				data, err = slackHistoryEnvelope(c, flagChannel, params, forceUserToken)
+				if err != nil {
+					return classifyAPIError(err)
+				}
+			} else {
+				data, prov, err = resolveRead(c, flags, "conversations", false, path, params)
+				if err != nil {
+					return classifyAPIError(err)
+				}
 			}
 			// Print provenance to stderr for human-facing output
 			{
@@ -98,6 +117,7 @@ func newConversationsHistoryCmd(flags *rootFlags) *cobra.Command {
 	cmd.Flags().StringVar(&flagCursor, "cursor", "", "Pagination cursor")
 	cmd.Flags().StringVar(&flagOldest, "oldest", "", "Only messages after this Unix timestamp")
 	cmd.Flags().StringVar(&flagLatest, "latest", "", "Only messages before this Unix timestamp")
+	cmd.Flags().StringVar(&flagUser, "user", "", "Slack user ID to resolve to a DM channel before fetching history")
 
 	return cmd
 }

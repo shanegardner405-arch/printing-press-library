@@ -154,7 +154,7 @@ Available Commands:
 | Command | Description |
 |---------|-------------|
 | `conversations` | List all channels in the workspace |
-| `conversations history` | Fetch message history for a channel |
+| `conversations history` | Fetch message history for a channel or DM. Use `--user <user_id>` to resolve and read a one-to-one DM through `SLACK_USER_TOKEN`. |
 | `conversations create` | Create a new channel |
 | `conversations archive` | Archive a channel |
 | `conversations unarchive` | Unarchive a channel |
@@ -354,7 +354,8 @@ slack-pp-cli reminders add --text "Review PRs" --time "in 2 hours"
 slack-pp-cli reactions add --channel C0123456789 --name thumbsup --timestamp 1234567890.123456
 
 # Export workspace messages for backup
-slack-pp-cli export messages --format jsonl --output messages.jsonl
+slack-pp-cli export messages --channel C0123456789 --format jsonl --output messages.jsonl
+slack-pp-cli export messages --user U0123456789 --format jsonl --output dm-messages.jsonl --paginate
 
 # Stream live channel activity to a monitoring pipeline
 slack-pp-cli tail messages --interval 10s | jq 'select(.text | contains("error"))'

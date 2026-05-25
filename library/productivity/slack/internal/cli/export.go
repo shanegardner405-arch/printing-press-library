@@ -17,6 +17,11 @@ func newExportCmd(flags *rootFlags) *cobra.Command {
 	var outputFile string
 	var limit int
 	var noCache bool
+	var channel string
+	var user string
+	var oldest string
+	var latest string
+	var paginate bool
 
 	cmd := &cobra.Command{
 		Use:   "export <resource> [id]",
@@ -92,6 +97,38 @@ Supports --data-source: local (from synced SQLite), live (from API), auto (local
 				c.NoCache = true
 			}
 
+			if resource == "messages" && (channel != "" || user != "" || len(args) > 1) {
+				if channel == "" && len(args) > 1 {
+					channel = args[1]
+				}
+				forceUserToken := false
+				if user != "" {
+					channel, err = slackResolveDMChannel(c, user)
+					if err != nil {
+						return classifyAPIError(err)
+					}
+					forceUserToken = true
+				}
+				params := map[string]string{}
+				if oldest != "" {
+					params["oldest"] = oldest
+				}
+				if latest != "" {
+					params["latest"] = latest
+				}
+				if limit > 0 {
+					params["limit"] = fmt.Sprintf("%d", limit)
+				}
+				items, err := slackHistoryMessages(c, channel, params, forceUserToken, paginate, limit)
+				if err != nil {
+					return classifyAPIError(err)
+				}
+				return writeExport(writer, items, format, limit, outputFile)
+			}
+			if resource == "messages" && flags.dataSource == "live" {
+				return fmt.Errorf("live message export requires a DM user or channel: use --user <USER_ID>, --channel <CHANNEL_ID>, or `export messages <CHANNEL_ID>`")
+			}
+
 			// Use the same endpoint mapping as sync
 			path := syncResourcePath(resource)
 			if len(args) > 1 {
@@ -120,6 +157,11 @@ Supports --data-source: local (from synced SQLite), live (from API), auto (local
 	cmd.Flags().StringVarP(&outputFile, "output", "o", "", "Output file path (default: stdout)")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum records to export (0 = unlimited)")
 	cmd.Flags().BoolVar(&noCache, "no-cache", false, "Bypass response cache for fresh data")
+	cmd.Flags().StringVar(&channel, "channel", "", "Channel or DM ID for live message export")
+	cmd.Flags().StringVar(&user, "user", "", "Slack user ID for live DM message export")
+	cmd.Flags().StringVar(&oldest, "oldest", "", "Only live messages after this Unix timestamp")
+	cmd.Flags().StringVar(&latest, "latest", "", "Only live messages before this Unix timestamp")
+	cmd.Flags().BoolVar(&paginate, "paginate", false, "Fetch additional history pages until Slack returns no cursor or --limit is reached")
 
 	return cmd
 }
