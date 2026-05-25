@@ -99,6 +99,9 @@ Source routing (local vs live) is controlled by `--data-source`: `auto` (default
 | Command | What it does |
 |---------|--------------|
 | `conversations` | List channels and DMs in the workspace |
+| `conversations history --channel <id>` | Fetch channel or DM history. DM IDs (`D...`) automatically use `SLACK_USER_TOKEN`. |
+| `conversations history --user <user_id>` | Open or resolve a one-to-one DM, then fetch history with `SLACK_USER_TOKEN`. |
+| `export messages --channel <id>` / `export messages --user <user_id>` | Export live channel or DM history to JSONL/JSON. Add `--paginate` to continue until Slack returns no cursor or `--limit` is reached. |
 | `users` | List all users in the workspace |
 | `search <query>` | Full-text search across synced messages (or live API with `--data-source live`) |
 | `digest` | Daily/weekly activity digest from locally synced data |
