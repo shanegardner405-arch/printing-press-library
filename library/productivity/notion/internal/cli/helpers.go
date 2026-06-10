@@ -122,6 +122,117 @@ func dryRunOK(flags *rootFlags) bool {
 	return flags != nil && flags.dryRun
 }
 
+type jsonHelpFlag struct {
+	Name      string `json:"name"`
+	Shorthand string `json:"shorthand,omitempty"`
+	Usage     string `json:"usage,omitempty"`
+	Default   string `json:"default,omitempty"`
+}
+
+type jsonHelpCommand struct {
+	Name  string `json:"name"`
+	Path  string `json:"path"`
+	Short string `json:"short,omitempty"`
+}
+
+type jsonHelpEnvelope struct {
+	Type        string            `json:"type"`
+	Command     string            `json:"command"`
+	Use         string            `json:"use"`
+	Short       string            `json:"short,omitempty"`
+	Long        string            `json:"long,omitempty"`
+	Aliases     []string          `json:"aliases,omitempty"`
+	Example     string            `json:"example,omitempty"`
+	Flags       []jsonHelpFlag    `json:"flags,omitempty"`
+	GlobalFlags []jsonHelpFlag    `json:"global_flags,omitempty"`
+	Subcommands []jsonHelpCommand `json:"subcommands,omitempty"`
+}
+
+func installJSONHelp(root *cobra.Command, flags *rootFlags) {
+	var install func(*cobra.Command)
+	install = func(cmd *cobra.Command) {
+		for _, child := range cmd.Commands() {
+			install(child)
+		}
+		defaultHelp := cmd.HelpFunc()
+		cmd.SetHelpFunc(func(helpCmd *cobra.Command, args []string) {
+			if wantsJSONHelp(flags) {
+				_ = json.NewEncoder(helpCmd.OutOrStdout()).Encode(buildJSONHelpEnvelope(helpCmd))
+				return
+			}
+			defaultHelp(helpCmd, args)
+		})
+	}
+	install(root)
+}
+
+func wantsJSONHelp(flags *rootFlags) bool {
+	return flags != nil && (flags.asJSON || flags.agent)
+}
+
+func buildJSONHelpEnvelope(cmd *cobra.Command) jsonHelpEnvelope {
+	env := jsonHelpEnvelope{
+		Type:    "help",
+		Command: cmd.CommandPath(),
+		Use:     cmd.UseLine(),
+		Short:   cmd.Short,
+		Long:    strings.TrimSpace(cmd.Long),
+		Aliases: append([]string(nil), cmd.Aliases...),
+		Example: strings.TrimSpace(cmd.Example),
+	}
+	env.Flags = collectJSONHelpFlags(cmd.NonInheritedFlags())
+	env.GlobalFlags = collectJSONHelpFlags(globalFlagSet(cmd))
+	env.Subcommands = collectJSONHelpCommands(cmd)
+	return env
+}
+
+func globalFlagSet(cmd *cobra.Command) *pflag.FlagSet {
+	if cmd.HasParent() {
+		return cmd.InheritedFlags()
+	}
+	return cmd.PersistentFlags()
+}
+
+func collectJSONHelpFlags(fs *pflag.FlagSet) []jsonHelpFlag {
+	if fs == nil {
+		return nil
+	}
+	var flags []jsonHelpFlag
+	fs.VisitAll(func(f *pflag.Flag) {
+		if f.Hidden {
+			return
+		}
+		flags = append(flags, jsonHelpFlag{
+			Name:      f.Name,
+			Shorthand: f.Shorthand,
+			Usage:     f.Usage,
+			Default:   f.DefValue,
+		})
+	})
+	sort.Slice(flags, func(i, j int) bool {
+		return flags[i].Name < flags[j].Name
+	})
+	return flags
+}
+
+func collectJSONHelpCommands(cmd *cobra.Command) []jsonHelpCommand {
+	var commands []jsonHelpCommand
+	for _, child := range cmd.Commands() {
+		if !child.IsAvailableCommand() || child.Name() == "help" {
+			continue
+		}
+		commands = append(commands, jsonHelpCommand{
+			Name:  child.Name(),
+			Path:  child.CommandPath(),
+			Short: child.Short,
+		})
+	}
+	sort.Slice(commands, func(i, j int) bool {
+		return commands[i].Name < commands[j].Name
+	})
+	return commands
+}
+
 // accessWarning describes an API access-denial that sync converts into a
 // non-fatal warning. It carries enough structured data for the sync_warning
 // JSON event without parsing free-form error strings downstream.
